@@ -1,0 +1,87 @@
+// Prisma schema — Aplikasi Antrean Klinik (Prisma 7)
+// Merujuk plan/data-model.md §2. Soft delete difilter di query layer (deletedAt IS NULL).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  superadmin
+  admin
+
+  @@map("user_role")
+}
+
+enum VisitStatus {
+  belum_dilayani
+  sudah_dilayani
+
+  @@map("visit_status")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  username     String   @unique @db.VarChar(50)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  nama         String   @db.VarChar(100)
+  role         UserRole
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  visits Visit[]
+
+  @@map("users")
+}
+
+model Patient {
+  id            String    @id @default(uuid()) @db.Uuid
+  medicalRecord String    @unique @map("medical_record") @db.VarChar(20)
+  name          String    @db.VarChar(100)
+  placeBirth    String    @map("place_birth") @db.VarChar(100)
+  dateBirth     DateTime  @map("date_birth") @db.Date
+  address       String    @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  visits Visit[]
+
+  @@index([name])
+  @@index([dateBirth])
+  @@index([deletedAt])
+  @@map("patients")
+}
+
+model Visit {
+  id           String      @id @default(uuid()) @db.Uuid
+  patientId    String      @map("patient_id") @db.Uuid
+  registeredBy String      @map("registered_by") @db.Uuid
+  visitDate    DateTime    @map("visit_date") @db.Date
+  queueNumber  Int         @map("queue_number")
+  complaint    String      @db.Text
+  status       VisitStatus @default(belum_dilayani)
+  servedAt     DateTime?   @map("served_at") @db.Timestamptz(6)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?   @map("deleted_at") @db.Timestamptz(6)
+
+  patient          Patient @relation(fields: [patientId], references: [id])
+  registeredByUser User    @relation(fields: [registeredBy], references: [id])
+
+  // Unique per tanggal hanya untuk baris aktif. Prisma belum mendukung partial
+  // index di schema, jadi index ini dibuat sebagai partial unique index
+  // (WHERE deleted_at IS NULL) lewat migration SQL manual. `map` disamakan agar
+  // Prisma tidak menganggapnya drift.
+  @@unique([visitDate, queueNumber], map: "visits_visit_date_queue_number_active_key")
+  @@index([visitDate])
+  @@index([patientId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("visits")
+}
